@@ -23,6 +23,9 @@ async function run() {
     const serviceCollection = client
       .db("doctors_portal")
       .collection("services");
+    const bookingCollection = client
+      .db("doctors_portal")
+      .collection("bookings");
 
     app.get("/service", async (req, res) => {
       const query = {};
@@ -30,10 +33,72 @@ async function run() {
       const services = await cursor.toArray();
       res.send(services);
     });
+
+    // this is not the proper way to query
+    // after learning more about mongodb, use aggregate lookup, pipeline, match, group
+
+    app.get("/available", async (req, res) => {
+      const date = req.query.date || "May 15, 2022";
+
+      // step 1: get all services
+
+      const services = await serviceCollection.find().toArray();
+
+      // step 2: get the booking on that day
+      const query = { date: date };
+      const bookings = await bookingCollection.find(query).toArray();
+
+      // step 3: for each service
+
+      services.forEach((service) => {
+        // step 4: find bookings for that service.
+
+        const serviceBookings = bookings.filter(
+          (b) => b.treatment === service.name
+        );
+
+        //step 5:  select slot for the service bookings
+
+        const booked = serviceBookings.map((s) => s.slot);
+        service.booked = booked;
+
+        // step 6: select those slots that are not in booked.
+
+        const available = service.slots.filter((s) => !booked.includes(s));
+
+        // step 7: set available slots to make it easier.
+
+        service.slots = available;
+      });
+      res.send(services);
+    });
+
+    app.get("/booking", async (req, res) => {
+      const patient = req.query.patient;
+      const query = { patient: patient };
+      const bookings = await bookingCollection.find(query).toArray();
+      res.send(bookings);
+    });
+
+    // post
+    app.post("/booking", async (req, res) => {
+      const booking = req.body;
+      const query = {
+        treatment: booking.treatment,
+        date: booking.date,
+        patient: booking.patient,
+      };
+      const exists = await bookingCollection.findOne(query);
+      if (exists) {
+        return res.send({ success: false, booking: exists });
+      }
+      const result = await bookingCollection.insertOne(booking);
+      return res.send({ success: true, result });
+    });
   } finally {
   }
 }
-run().catch(console.dir());
+run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("doctors portal running");
