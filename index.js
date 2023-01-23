@@ -147,6 +147,56 @@ async function run() {
       res.send(services);
     });
 
+    // Mongo db aggregation pipeline
+
+    app.get("/v2/available", async (req, res) => {
+      const date = req.query.date;
+      const services = await serviceCollection
+        .aggregate([
+          {
+            $lookup: {
+              from: "bookings",
+              localField: "name",
+              foreignField: "treatment",
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: ["$date", date],
+                    },
+                  },
+                },
+              ],
+              as: "booked",
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              slots: 1,
+              booked: {
+                $map: {
+                  input: "$booked",
+                  as: "book",
+                  in: "$$book.slot",
+                },
+              },
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              slots: {
+                $setDifference: ["$slots", "$booked"],
+              },
+            },
+          },
+        ])
+        .toArray();
+
+      res.send(services);
+    });
+
     app.get("/booking", verifyJWT, async (req, res) => {
       const patient = req.query.patient;
 
